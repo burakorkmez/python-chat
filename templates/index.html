@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Python Chat App</title>
+		<script
+			src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"
+			integrity="sha512-luMnTJZ7oEchNDZAtQhgjomP1eZefnl82ruTH/3Oj/Yu5qYtwL7+dVRccACS/Snp1lFXq188XFipHKYE75IaQQ=="
+			crossorigin="anonymous"
+			referrerpolicy="no-referrer"
+		></script>
+
+		<style>
+			:root {
+				--primary-color: #4a90e2;
+				--primary-light: #5da8ff;
+				--primary-dark: #3a7cbd;
+				--secondary-color: #e8f1f8;
+				--text-color: #2c3e50;
+				--bg-color: #f0f8ff;
+				--message-bg: #e1eeff;
+				--system-message-color: #8fa4b8;
+			}
+
+			body {
+				font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+				margin: 0;
+				padding: 0;
+				background-color: var(--bg-color);
+				color: var(--text-color);
+			}
+
+			.chat-container {
+				max-width: 800px;
+				margin: 20px auto;
+				background-color: white;
+				border-radius: 15px;
+				box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+				overflow: hidden;
+			}
+
+			.chat-header {
+				background-color: var(--primary-color);
+				color: white;
+				padding: 20px;
+				text-align: center;
+				font-size: 24px;
+				font-weight: bold;
+			}
+
+			.chat-messages {
+				height: 400px;
+				overflow-y: auto;
+				padding: 20px;
+				background-color: var(--secondary-color);
+			}
+
+			.message {
+				margin-bottom: 15px;
+				display: flex;
+				align-items: flex-start;
+			}
+
+			.message img {
+				width: 40px;
+				height: 40px;
+				border-radius: 50%;
+				margin-right: 10px;
+				border: 2px solid var(--primary-color);
+			}
+
+			.message-content {
+				background-color: var(--message-bg);
+				padding: 12px;
+				border-radius: 18px;
+				max-width: 70%;
+				box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+			}
+
+			.message-username {
+				font-weight: bold;
+				margin-bottom: 5px;
+				color: var(--primary-dark);
+			}
+
+			.chat-input {
+				display: flex;
+				padding: 20px;
+				background-color: white;
+				border-top: 1px solid var(--secondary-color);
+			}
+
+			#message-input,
+			#username-input {
+				flex-grow: 1;
+				padding: 12px;
+				border: 1px solid var(--secondary-color);
+				border-radius: 25px;
+				margin-right: 10px;
+				font-size: 16px;
+			}
+
+			#send-button,
+			#update-username-button {
+				background-color: var(--primary-color);
+				color: white;
+				border: none;
+				padding: 12px 20px;
+				border-radius: 25px;
+				cursor: pointer;
+				font-size: 16px;
+				transition: background-color 0.3s ease;
+			}
+
+			#send-button:hover,
+			#update-username-button:hover {
+				background-color: var(--primary-dark);
+			}
+
+			.username-container {
+				display: flex;
+				padding: 15px 20px;
+				background-color: var(--secondary-color);
+				align-items: center;
+			}
+
+			#current-username {
+				margin-right: 10px;
+				font-weight: bold;
+				color: var(--primary-dark);
+			}
+
+			.system-message {
+				text-align: center;
+				font-style: italic;
+				color: var(--system-message-color);
+				margin: 10px 0;
+			}
+
+			.message.sent {
+				flex-direction: row-reverse;
+			}
+
+			.message.sent .message-content {
+				background-color: var(--primary-color);
+				color: white;
+				margin-left: 10px;
+				margin-right: 0;
+			}
+
+			.message.sent .message-username {
+				text-align: right;
+				color: white;
+			}
+
+			.message.sent img {
+				margin-right: 0;
+				margin-left: 10px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="chat-container">
+			<div class="chat-header">Python Chat</div>
+			<div class="username-container">
+				<span id="current-username"></span>
+				<input type="text" id="username-input" placeholder="New username" />
+				<button id="update-username-button">Update Username</button>
+			</div>
+			<div class="chat-messages" id="chat-messages"></div>
+			<div class="chat-input">
+				<input type="text" id="message-input" placeholder="Type your message..." />
+				<button id="send-button">Send</button>
+			</div>
+		</div>
+
+		<script>
+			const socket = io();
+			const chatMessages = document.getElementById("chat-messages");
+			const messageInput = document.getElementById("message-input");
+			const sendButton = document.getElementById("send-button");
+			const currentUsernameSpan = document.getElementById("current-username");
+			const usernameInput = document.getElementById("username-input");
+			const updateUsernameButton = document.getElementById("update-username-button");
+
+			let currentUsername = "";
+
+			socket.on("set_username", (data) => {
+				currentUsername = data.username;
+				currentUsernameSpan.textContent = `Your username: ${currentUsername}`;
+			});
+
+			socket.on("user_joined", (data) => {
+				addMessage(`${data.username} joined the chat`, "system");
+			});
+
+			socket.on("user_left", (data) => {
+				addMessage(`${data.username} left the chat`, "system");
+			});
+
+			socket.on("new_message", (data) => {
+				addMessage(data.message, "user", data.username, data.avatar);
+			});
+
+			socket.on("username_updated", (data) => {
+				addMessage(`${data.old_username} changed their name to ${data.new_username}`, "system");
+				if (data.old_username === currentUsername) {
+					currentUsername = data.new_username;
+					currentUsernameSpan.textContent = `Your username: ${currentUsername}`;
+				}
+			});
+
+			sendButton.addEventListener("click", sendMessage);
+			messageInput.addEventListener("keypress", (e) => {
+				if (e.key === "Enter") sendMessage();
+			});
+
+			updateUsernameButton.addEventListener("click", updateUsername);
+
+			function sendMessage() {
+				const message = messageInput.value.trim();
+				if (message) {
+					socket.emit("send_message", { message });
+					messageInput.value = "";
+				}
+			}
+
+			function updateUsername() {
+				const newUsername = usernameInput.value.trim();
+				if (newUsername && newUsername !== currentUsername) {
+					socket.emit("update_username", { username: newUsername });
+					usernameInput.value = "";
+				}
+			}
+
+			function addMessage(message, type, username = "", avatar = "") {
+				const messageElement = document.createElement("div");
+				messageElement.className = "message";
+
+				if (type === "user") {
+					const isSentMessage = username === currentUsername;
+					if (isSentMessage) {
+						messageElement.classList.add("sent");
+					}
+
+					const avatarImg = document.createElement("img");
+					avatarImg.src = avatar;
+					messageElement.appendChild(avatarImg);
+
+					const contentDiv = document.createElement("div");
+					contentDiv.className = "message-content";
+
+					const usernameDiv = document.createElement("div");
+					usernameDiv.className = "message-username";
+					usernameDiv.textContent = username;
+					contentDiv.appendChild(usernameDiv);
+
+					const messageText = document.createElement("div");
+					messageText.textContent = message;
+					contentDiv.appendChild(messageText);
+
+					messageElement.appendChild(contentDiv);
+				} else {
+					messageElement.className = "system-message";
+					messageElement.textContent = message;
+				}
+				chatMessages.appendChild(messageElement);
+				chatMessages.scrollTop = chatMessages.scrollHeight;
+			}
+		</script>
+	</body>
+</html>
